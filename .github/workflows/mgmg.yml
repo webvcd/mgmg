@@ -1,4 +1,4 @@
-name: Hourly Sync Interface File
+name: Force Sync with Details
 
 on:
   schedule:
@@ -13,42 +13,55 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Setup Git
       run: |
-        git config --global user.name "Auto Sync Bot"
-        git config --global user.email "auto-sync@noreply.github.com"
+        git config --global user.name "Sync Bot"
+        git config --global user.email "sync-bot@noreply.github.com"
 
-    - name: Download file
+    - name: Always download and commit
       run: |
-        # 下载文件
-        wget -q -O interface.txt https://raw.githubusercontent.com/develop202/migu_video/refs/heads/main/interface.txt
+        # 下载文件（带重试）
+        for i in {1..3}; do
+          echo "下载尝试 $i/3..."
+          if curl -s -f -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"; then
+            echo "✅ 下载成功"
+            break
+          else
+            echo "❌ 下载失败，等待后重试..."
+            sleep 5
+          fi
+        done
         
-        # 验证文件非空
-        if [ ! -s interface.txt ]; then
-          echo "错误：下载的文件为空"
-          exit 1
-        fi
+        # 创建强制提交信息文件
+        cat > sync-force.md << EOF
+        # 强制同步记录
         
-        echo "✅ 文件下载成功"
-        echo "大小: $(wc -l < interface.txt) 行"
-        echo "字符数: $(wc -c < interface.txt) 字节"
-
-    - name: Auto commit
-      run: |
-        # 添加文件
-        git add interface.txt
+        本次同步信息：
+        - 时间: $(date '+%Y-%m-%d %H:%M:%S')
+        - 运行ID: ${{ github.run_id }}
+        - 触发方式: ${{ github.event_name }}
+        - 源地址: https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt
         
-        # 总是提交，使用不同的提交信息
-        if git diff --cached --quiet; then
-          echo "没有变化，创建空提交"
-          git commit --allow-empty -m "🕐 定期检查 [$(date +'%Y-%m-%d %H:%M')] - 无变化"
-        else
-          echo "检测到变化，提交更新"
-          git commit -m "🔄 同步更新 [$(date +'%Y-%m-%d %H:%M')]"
-        fi
+        注意：此文件每次运行都会更新，无论源文件是否变化。
+        EOF
+        
+        # 强制添加所有文件
+        git add -A
+        
+        # 强制提交
+        git commit -m "🔁 FORCE SYNC [$(date +'%m/%d %H:%M')] #${{ github.run_number }}"
         
         # 推送
         git push origin main
+
+    - name: Show commit details
+      run: |
+        echo "=== 同步成功 ==="
+        echo "提交哈希: $(git log -1 --pretty=format:'%H')"
+        echo "提交时间: $(git log -1 --pretty=format:'%cd')"
+        echo "提交信息: $(git log -1 --pretty=format:'%s')"
+        echo "文件状态:"
+        git status --short
