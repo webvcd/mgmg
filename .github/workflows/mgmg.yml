@@ -1,4 +1,4 @@
-name: Force Sync with Details
+name: Force Sync with Details (Beijing Time)
 
 on:
   schedule:
@@ -35,12 +35,15 @@ jobs:
           fi
         done
         
+        # 获取北京时间
+        BEIJING_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
+        
         # 创建强制提交信息文件
         cat > sync-force.md << EOF
         # 强制同步记录
         
         本次同步信息：
-        - 时间: $(date '+%Y-%m-%d %H:%M:%S')
+        - 北京时间: $BEIJING_TIME
         - 运行ID: ${{ github.run_id }}
         - 触发方式: ${{ github.event_name }}
         - 源地址: https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt
@@ -51,8 +54,8 @@ jobs:
         # 强制添加所有文件
         git add -A
         
-        # 强制提交
-        git commit -m "🔁 FORCE SYNC [$(date +'%m/%d %H:%M')] #${{ github.run_number }}"
+        # 强制提交（使用北京时间）
+        git commit -m "🔁 FORCE SYNC [北京时间 $BEIJING_TIME] #${{ github.run_number }}"
         
         # 推送
         git push origin main
@@ -60,8 +63,8 @@ jobs:
     - name: Show commit details
       run: |
         echo "=== 同步成功 ==="
+        echo "当前北京时间: $(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
         echo "提交哈希: $(git log -1 --pretty=format:'%H')"
-        echo "提交时间: $(git log -1 --pretty=format:'%cd')"
         echo "提交信息: $(git log -1 --pretty=format:'%s')"
         echo "文件状态:"
         git status --short
