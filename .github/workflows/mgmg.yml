@@ -2,7 +2,7 @@ name: Force Sync with Details (Beijing Time)
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # 每小时的第0分钟运行（UTC时间）
   workflow_dispatch:
 
 permissions:
@@ -20,6 +20,8 @@ jobs:
       run: |
         git config --global user.name "Sync Bot"
         git config --global user.email "sync-bot@noreply.github.com"
+        # 设置时区为上海（北京时间）
+        sudo timedatectl set-timezone Asia/Shanghai
 
     - name: Always download and commit
       run: |
@@ -37,34 +39,55 @@ jobs:
         
         # 获取北京时间
         BEIJING_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
+        BEIJING_DATE=$(TZ="Asia/Shanghai" date '+%Y年%m月%d日')
+        BEIJING_TIME_12H=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %p %I:%M:%S')
         
-        # 创建强制提交信息文件
+        # 创建强制提交信息文件（使用北京时间）
         cat > sync-force.md << EOF
         # 强制同步记录
         
         本次同步信息：
         - 北京时间: $BEIJING_TIME
+        - 日期: $BEIJING_DATE
+        - 12小时制: $BEIJING_TIME_12H
         - 运行ID: ${{ github.run_id }}
         - 触发方式: ${{ github.event_name }}
         - 源地址: https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt
         
         注意：此文件每次运行都会更新，无论源文件是否变化。
+        
+        ## 时区信息
+        - 当前时区: Asia/Shanghai (UTC+8)
+        - 下次同步: 北京时间 $(TZ="Asia/Shanghai" date -d '+1 hour' '+%H:%M:%S')
+        
+        > 文件自动同步于 $BEIJING_TIME (北京时间)
         EOF
         
-        # 强制添加所有文件
+        # 添加文件并提交
         git add -A
         
-        # 强制提交（使用北京时间）
-        git commit -m "🔁 FORCE SYNC [北京时间 $BEIJING_TIME] #${{ github.run_number }}"
+        # 使用北京时间的提交信息
+        COMMIT_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
+        COMMIT_MSG="🔁 FORCE SYNC [$COMMIT_TIME 北京时间] #${{ github.run_number }}"
+        
+        git commit -m "$COMMIT_MSG"
         
         # 推送
         git push origin main
+        
+        echo "✅ 同步完成于北京时间: $BEIJING_TIME"
 
     - name: Show commit details
       run: |
         echo "=== 同步成功 ==="
-        echo "当前北京时间: $(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
+        echo "北京时间: $(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
         echo "提交哈希: $(git log -1 --pretty=format:'%H')"
+        echo "提交时间(UTC): $(git log -1 --pretty=format:'%cd')"
+        echo "提交时间(北京时间): $(TZ="Asia/Shanghai" date -d "$(git log -1 --pretty=format:'%cd')" '+%Y-%m-%d %H:%M:%S')"
         echo "提交信息: $(git log -1 --pretty=format:'%s')"
         echo "文件状态:"
         git status --short
+        echo ""
+        echo "当前时间对照:"
+        echo "UTC时间: $(date -u '+%Y-%m-%d %H:%M:%S')"
+        echo "北京时间: $(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
