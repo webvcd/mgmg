@@ -1,0 +1,54 @@
+name: Hourly Sync Interface File
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Git
+      run: |
+        git config --global user.name "Auto Sync Bot"
+        git config --global user.email "auto-sync@noreply.github.com"
+
+    - name: Download file
+      run: |
+        # 下载文件
+        wget -q -O interface.txt https://raw.githubusercontent.com/develop202/migu_video/refs/heads/main/interface.txt
+        
+        # 验证文件非空
+        if [ ! -s interface.txt ]; then
+          echo "错误：下载的文件为空"
+          exit 1
+        fi
+        
+        echo "✅ 文件下载成功"
+        echo "大小: $(wc -l < interface.txt) 行"
+        echo "字符数: $(wc -c < interface.txt) 字节"
+
+    - name: Auto commit
+      run: |
+        # 添加文件
+        git add interface.txt
+        
+        # 总是提交，使用不同的提交信息
+        if git diff --cached --quiet; then
+          echo "没有变化，创建空提交"
+          git commit --allow-empty -m "🕐 定期检查 [$(date +'%Y-%m-%d %H:%M')] - 无变化"
+        else
+          echo "检测到变化，提交更新"
+          git commit -m "🔄 同步更新 [$(date +'%Y-%m-%d %H:%M')]"
+        fi
+        
+        # 推送
+        git push origin main
