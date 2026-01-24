@@ -1,0 +1,64 @@
+name: Sync Remote File Hourly
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+# 设置工作流权限
+permissions:
+  contents: write  # 给予写入内容的权限
+
+jobs:
+  sync-file:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # 移除 token 参数，使用默认的 GITHUB_TOKEN
+        fetch-depth: 0
+
+    - name: Setup Git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Download remote file
+      run: |
+        # 下载文件
+        curl -s -f -o interface.txt https://raw.githubusercontent.com/develop202/migu_video/refs/heads/main/interface.txt
+        
+        if [ $? -ne 0 ]; then
+          echo "❌ 文件下载失败"
+          exit 1
+        fi
+        
+        # 检查文件是否有变化
+        if git diff --quiet interface.txt 2>/dev/null; then
+          echo "📝 文件没有变化"
+          echo "NO_CHANGES=true" >> $GITHUB_ENV
+        else
+          echo "📤 文件有变化，将提交更新"
+          echo "NO_CHANGES=false" >> $GITHUB_ENV
+          
+          # 显示变化
+          echo "变化内容："
+          git diff interface.txt | head -20
+        fi
+
+    - name: Commit and push if changed
+      if: env.NO_CHANGES == 'false'
+      run: |
+        git add interface.txt
+        git commit -m "🔄 每小时同步更新 [$(date +'%H:%M')]"
+        git push origin main
+
+    - name: Log success with changes
+      if: env.NO_CHANGES == 'false' && success()
+      run: echo "✅ 文件已更新并提交"
+
+    - name: Log no changes
+      if: env.NO_CHANGES == 'true'
+      run: echo "📝 文件无变化，无需更新"
