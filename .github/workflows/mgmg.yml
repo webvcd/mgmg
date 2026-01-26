@@ -1,8 +1,8 @@
-name: 定时下载migu interface.txt
+name: 定时下载
 on:
   schedule:
-    # 固定0/30分钟触发，GitHub调度优先级更高，比*/30更稳定
-    - cron: '0,30 * * * *'
+    # 每小时整点触发，GitHub调度最稳定，替代30分钟（解决你的需求）
+    - cron: '0 * * * *'
   workflow_dispatch: # 手动触发开关，测试用
 
 jobs:
