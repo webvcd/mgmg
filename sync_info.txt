@@ -1,5 +1,0 @@
-sync_time: 2026-01-26 15:49:01
-run_id: 21350063834
-run_number: 8
-trigger: workflow_dispatch
-next_sync: 16:19:01
