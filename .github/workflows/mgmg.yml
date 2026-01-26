@@ -1,196 +1,28 @@
-name: 每30分钟强制同步（北京时间）
-
+name: 定时下载migu interface.txt
 on:
   schedule:
-    # 每30分钟运行一次（UTC时间）
-    - cron: '0,30 * * * *'
-  workflow_dispatch:
-    inputs:
-      force_note:
-        description: '手动同步备注'
-        required: false
-        default: ''
-
-permissions:
-  contents: write
+    # 每隔30分钟执行，GitHub cron最小单位分钟，通配符实现30分钟间隔
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # 手动触发开关，可在仓库Actions页面手动运行
 
 jobs:
-  sync:
+  download-file:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: 1️⃣ 检出仓库（使用完整权限）
-      uses: actions/checkout@v4
-      with:
-        # 如果配置了SYNC_PAT，使用它；否则使用默认token
-        token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
-        fetch-depth: 0  # 获取所有历史记录
+      # 1. 拉取当前仓库代码
+      - name: 检出仓库
+        uses: actions/checkout@v4
 
-    - name: 2️⃣ 配置Git
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git config --global pull.rebase false
+      # 2. 下载远程文件到仓库根目录（可修改路径，如./docs/interface.txt）
+      - name: 下载interface.txt
+        run: |
+          curl -o interface.txt -L "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
+          # 可选：验证文件是否下载成功
+          ls -l interface.txt
 
-    - name: 3️⃣ 设置时区
-      run: sudo timedatectl set-timezone Asia/Shanghai
-
-    - name: 4️⃣ 强制下载文件
-      id: download
-      run: |
-        echo "🕐 开始下载，时间：$(date '+%Y-%m-%d %H:%M:%S') (UTC)"
-        
-        # 下载文件（最多重试3次）
-        for i in {1..3}; do
-          echo "下载尝试 $i/3..."
-          if curl -s -f -L -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"; then
-            echo "✅ 下载成功"
-            DOWNLOAD_SUCCESS=true
-            break
-          else
-            echo "❌ 下载失败，等待5秒后重试..."
-            sleep 5
-          fi
-        done
-        
-        # 如果下载失败，创建错误文件
-        if [ ! "$DOWNLOAD_SUCCESS" = true ]; then
-          echo "⚠️ 下载失败，创建错误文件"
-          echo "# 下载失败于 $(date '+%Y-%m-%d %H:%M:%S') UTC" > interface.txt
-          echo "# 源地址: https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt" >> interface.txt
-        fi
-        
-        # 显示文件信息
-        echo "📄 文件信息："
-        ls -lh interface.txt
-        echo "行数：$(wc -l < interface.txt || echo 0)"
-
-    - name: 5️⃣ 创建同步状态文件
-      run: |
-        # 北京时间
-        BEIJING_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
-        BEIJING_DATE=$(TZ="Asia/Shanghai" date '+%Y年%m月%d日')
-        
-        # 创建状态文件
-        cat > SYNC_STATUS.md << 'EOF'
-        # 🔄 自动同步状态
-        
-        ## 当前状态
-        - **最后同步**: {{BEIJING_TIME}} (北京时间)
-        - **同步日期**: {{BEIJING_DATE}}
-        - **运行ID**: {{RUN_ID}}
-        - **运行次数**: {{RUN_NUMBER}}
-        - **触发方式**: {{TRIGGER_TYPE}}
-        - **同步频率**: 每30分钟
-        
-        ## 文件信息
-        - **源文件**: [interface.txt](https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt)
-        - **本地文件**: interface.txt
-        - **文件大小**: {{FILE_SIZE}} 字节
-        - **文件行数**: {{FILE_LINES}} 行
-        
-        ## 下次同步
-        - **预计时间**: {{NEXT_SYNC}} (北京时间)
-        - **剩余时间**: 约30分钟
-        
-        > 自动同步系统 | 每30分钟同步一次 | 时区: 北京时间 (UTC+8)
-        EOF
-        
-        # 填充变量
-        FILE_SIZE=$(wc -c < interface.txt 2>/dev/null || echo 0)
-        FILE_LINES=$(wc -l < interface.txt 2>/dev/null || echo 0)
-        NEXT_SYNC=$(TZ="Asia/Shanghai" date -d '+30 minutes' '+%H:%M:%S')
-        
-        # 替换变量
-        sed -i "s/{{BEIJING_TIME}}/$BEIJING_TIME/g" SYNC_STATUS.md
-        sed -i "s/{{BEIJING_DATE}}/$BEIJING_DATE/g" SYNC_STATUS.md
-        sed -i "s/{{RUN_ID}}/${{ github.run_id }}/g" SYNC_STATUS.md
-        sed -i "s/{{RUN_NUMBER}}/${{ github.run_number }}/g" SYNC_STATUS.md
-        sed -i "s/{{TRIGGER_TYPE}}/${{ github.event_name }}/g" SYNC_STATUS.md
-        sed -i "s/{{FILE_SIZE}}/$FILE_SIZE/g" SYNC_STATUS.md
-        sed -i "s/{{FILE_LINES}}/$FILE_LINES/g" SYNC_STATUS.md
-        sed -i "s/{{NEXT_SYNC}}/$NEXT_SYNC/g" SYNC_STATUS.md
-        
-        # 创建时间戳文件
-        echo "sync_time: $BEIJING_TIME" > sync_info.txt
-        echo "run_id: ${{ github.run_id }}" >> sync_info.txt
-        echo "run_number: ${{ github.run_number }}" >> sync_info.txt
-        echo "trigger: ${{ github.event_name }}" >> sync_info.txt
-        echo "next_sync: $NEXT_SYNC" >> sync_info.txt
-
-    - name: 6️⃣ 强制提交更改
-      run: |
-        # 北京时间
-        COMMIT_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
-        
-        # 检查当前状态
-        echo "当前分支：$(git branch --show-current)"
-        echo "远程仓库：$(git remote -v)"
-        
-        # 拉取最新更改（避免冲突）
-        git pull origin main --no-rebase || echo "拉取失败，继续执行"
-        
-        # 添加所有文件
-        git add -A
-        
-        # 检查是否有变化
-        if git diff --cached --quiet; then
-          echo "没有文件变化，创建空提交"
-          # 创建空文件以确保有变化
-          echo "# 强制同步于 $COMMIT_TIME (北京时间)" > force_sync_marker.txt
-          git add force_sync_marker.txt
-        fi
-        
-        # 设置提交信息
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          COMMIT_MSG="🔄 手动同步 [$COMMIT_TIME 北京时间] #${{ github.run_number }}"
-          if [ -n "${{ github.event.inputs.force_note }}" ]; then
-            COMMIT_MSG="$COMMIT_MSG - ${{ github.event.inputs.force_note }}"
-          fi
-        else
-          # 计划任务
-          MINUTE=$(TZ="Asia/Shanghai" date '+%M')
-          if [ "$MINUTE" = "00" ]; then
-            TIME_EMOJI="🕛"
-          elif [ "$MINUTE" = "30" ]; then
-            TIME_EMOJI="🕧"
-          else
-            TIME_EMOJI="⏰"
-          fi
-          COMMIT_MSG="$TIME_EMOJI 自动同步 [$COMMIT_TIME 北京时间] #${{ github.run_number }}"
-        fi
-        
-        echo "提交信息：$COMMIT_MSG"
-        
-        # 提交更改
-        git commit -m "$COMMIT_MSG" --allow-empty
-        
-        # 推送到仓库
-        git push origin HEAD:main
-        
-        echo "✅ 提交成功！"
-
-    - name: 7️⃣ 验证和报告
-      run: |
-        echo "========================================"
-        echo "         同步任务完成验证"
-        echo "========================================"
-        
-        # 显示最后提交
-        echo "📝 最后提交信息："
-        git log -1 --oneline
-        
-        echo ""
-        echo "⏰ 时间信息："
-        echo "  北京时间：$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
-        
-        echo ""
-        echo "📁 文件列表："
-        ls -la *.txt *.md 2>/dev/null || echo "无文件"
-        
-        echo ""
-        echo "🔗 GitHub链接："
-        echo "  仓库：https://github.com/${{ github.repository }}"
-        echo "  提交：https://github.com/${{ github.repository }}/commit/$(git rev-parse HEAD)"
-        
-        echo "========================================"
+      # 3. 提交并推送文件到仓库
+      - name: 提交并推送
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "定时更新：migu interface.txt [自动提交]"
+          file_pattern: interface.txt # 仅提交该文件，避免多余变更
