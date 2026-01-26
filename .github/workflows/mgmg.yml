@@ -1,26 +1,33 @@
-name: 定时下载migu
+name: 定时
 on:
   schedule:
-    - cron: '0 * * * *'  # 1小时整点触发
-  workflow_dispatch:     # 手动触发开关
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   download-file:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出仓库
+      - name: 检出仓库（拉取完整历史+指定主分支）
         uses: actions/checkout@v4
+        with:
+          ref: main  # 明确指定主分支，避免分支错乱
+          fetch-depth: 0  # 拉取完整仓库历史
 
-      - name: 强制下载并覆盖interface.txt
+      - name: 强制下载覆盖+手动标记变更
         run: |
-          # -f 强制覆盖已有文件 -s 静默下载（仅报错输出）-L 跟随重定向
-          curl -f -s -L -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
-          ls -l interface.txt  # 验证文件存在
-          git add interface.txt # 强制加入暂存区（核心：无变更也标记）
+          # 强制下载，覆盖本地文件，失败直接终止
+          curl -fsSL -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
+          # 强制添加到暂存区，无视Git缓存
+          git add interface.txt --force
+          # 查看暂存区状态，确认文件被标记
+          git status
 
-      - name: 强制提交并推送（无变更也提交）
+      - name: 强制提交推送（跳过检查+指定分支）
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "定时强制更新：migu interface.txt [自动提交]"
           file_pattern: interface.txt
-          skip_dirty_check: true # 跳过文件变更检查（关键：强制提交）
+          skip_dirty_check: true  # 跳过变更检查
+          push_options: --force  # 强制推送到远程分支
+          branch: main  # 明确推送到main分支
