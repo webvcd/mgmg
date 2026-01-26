@@ -1,33 +1,34 @@
-name: 定时
+name: 定时下载migu interface.txt
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *'  # 1小时整点触发
+  workflow_dispatch:     # 手动触发
 
 jobs:
   download-file:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出仓库（拉取完整历史+指定主分支）
+      - name: 检出仓库（指定主分支+完整历史）
         uses: actions/checkout@v4
         with:
-          ref: main  # 明确指定主分支，避免分支错乱
-          fetch-depth: 0  # 拉取完整仓库历史
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true # 保留推送权限
 
-      - name: 强制下载覆盖+手动标记变更
+      - name: 强制下载覆盖文件
         run: |
-          # 强制下载，覆盖本地文件，失败直接终止
+          # 强制下载，失败直接退出，确保文件最新
           curl -fsSL -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
-          # 强制添加到暂存区，无视Git缓存
-          git add interface.txt --force
-          # 查看暂存区状态，确认文件被标记
-          git status
+          ls -l interface.txt # 验证文件存在
 
-      - name: 强制提交推送（跳过检查+指定分支）
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "定时强制更新：migu interface.txt [自动提交]"
-          file_pattern: interface.txt
-          skip_dirty_check: true  # 跳过变更检查
-          push_options: --force  # 强制推送到远程分支
-          branch: main  # 明确推送到main分支
+      - name: 手动Git强制提交+推送（核心：绕过Action的检查）
+        run: |
+          # 配置Git用户（和Action保持一致）
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 强制添加文件，无视缓存/变更
+          git add interface.txt --force
+          # 强制提交，即使无变更（用--allow-empty）
+          git commit -m "定时强制更新：migu interface.txt [自动提交]" --allow-empty
+          # 强制推送到main分支，解决权限/分支差异问题
+          git push origin main --force
