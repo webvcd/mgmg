@@ -2,7 +2,7 @@ name: Force Sync with Details (Beijing Time)
 
 on:
   schedule:
-    - cron: '0 * * * *'  # 每小时的第0分钟运行（UTC时间）
+    - cron: '*/30 * * * *'  # 每30分钟运行一次（UTC时间）
   workflow_dispatch:
 
 permissions:
@@ -53,12 +53,13 @@ jobs:
         - 运行ID: ${{ github.run_id }}
         - 触发方式: ${{ github.event_name }}
         - 源地址: https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt
+        - 同步频率: 每30分钟
         
         注意：此文件每次运行都会更新，无论源文件是否变化。
         
         ## 时区信息
         - 当前时区: Asia/Shanghai (UTC+8)
-        - 下次同步: 北京时间 $(TZ="Asia/Shanghai" date -d '+1 hour' '+%H:%M:%S')
+        - 下次同步: 北京时间 $(TZ="Asia/Shanghai" date -d '+30 minutes' '+%H:%M:%S')
         
         > 文件自动同步于 $BEIJING_TIME (北京时间)
         EOF
@@ -68,7 +69,7 @@ jobs:
         
         # 使用北京时间的提交信息
         COMMIT_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
-        COMMIT_MSG="🔁 FORCE SYNC [$COMMIT_TIME 北京时间] #${{ github.run_number }}"
+        COMMIT_MSG="🔄 FORCE SYNC [$COMMIT_TIME 北京时间] #${{ github.run_number }}"
         
         git commit -m "$COMMIT_MSG"
         
@@ -91,3 +92,4 @@ jobs:
         echo "当前时间对照:"
         echo "UTC时间: $(date -u '+%Y-%m-%d %H:%M:%S')"
         echo "北京时间: $(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
+        echo "下次同步: 北京时间 $(TZ="Asia/Shanghai" date -d '+30 minutes' '+%Y-%m-%d %H:%M:%S')"
