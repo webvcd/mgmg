@@ -1,28 +1,24 @@
 name: 定时下载migu interface.txt
 on:
   schedule:
-    # 每隔30分钟执行，GitHub cron最小单位分钟，通配符实现30分钟间隔
-    - cron: '*/30 * * * *'
-  workflow_dispatch: # 手动触发开关，可在仓库Actions页面手动运行
+    # 固定0/30分钟触发，GitHub调度优先级更高，比*/30更稳定
+    - cron: '0,30 * * * *'
+  workflow_dispatch: # 手动触发开关，测试用
 
 jobs:
   download-file:
     runs-on: ubuntu-latest
     steps:
-      # 1. 拉取当前仓库代码
       - name: 检出仓库
         uses: actions/checkout@v4
 
-      # 2. 下载远程文件到仓库根目录（可修改路径，如./docs/interface.txt）
       - name: 下载interface.txt
         run: |
           curl -o interface.txt -L "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
-          # 可选：验证文件是否下载成功
           ls -l interface.txt
 
-      # 3. 提交并推送文件到仓库
       - name: 提交并推送
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "定时更新：migu interface.txt [自动提交]"
-          file_pattern: interface.txt # 仅提交该文件，避免多余变更
+          file_pattern: interface.txt
