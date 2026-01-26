@@ -1,9 +1,16 @@
-name: Force Sync with Details (Beijing Time)
+name: 每30分钟强制同步（北京时间）
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 每30分钟运行一次（UTC时间）
-  workflow_dispatch:
+    # 每30分钟运行一次（UTC时间）
+    # 对应北京时间：8:00, 8:30, 9:00, 9:30...（全天48次）
+    - cron: '0,30 * * * *'
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      force_note:
+        description: '手动同步备注'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -13,83 +20,152 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
+    - name: 1️⃣ 检出仓库
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.SYNC_PAT }}  # 使用PAT进行检出和推送
 
-    - name: Setup Git
+    - name: 2️⃣ 配置Git
       run: |
-        git config --global user.name "Sync Bot"
-        git config --global user.email "sync-bot@noreply.github.com"
-        # 设置时区为上海（北京时间）
-        sudo timedatectl set-timezone Asia/Shanghai
+        git config --global user.name "GitHub Sync Bot"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: Always download and commit
+    - name: 3️⃣ 设置时区（北京时间）
+      run: sudo timedatectl set-timezone Asia/Shanghai
+
+    - name: 4️⃣ 下载目标文件
       run: |
-        # 下载文件（带重试）
-        for i in {1..3}; do
-          echo "下载尝试 $i/3..."
-          if curl -s -f -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"; then
-            echo "✅ 下载成功"
-            break
+        echo "🕐 开始下载，时间：$(date '+%Y-%m-%d %H:%M:%S') (UTC)"
+        echo "下载源：https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
+        
+        # 使用wget（更稳定）
+        if wget -q --show-progress --timeout=30 -O interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"; then
+          echo "✅ 下载成功"
+          echo "文件大小：$(wc -l < interface.txt || echo 0) 行"
+        else
+          echo "❌ 下载失败，使用curl重试..."
+          if curl -s -f -L -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"; then
+            echo "✅ 使用curl下载成功"
           else
-            echo "❌ 下载失败，等待后重试..."
-            sleep 5
+            echo "❌ 所有下载方式都失败"
+            # 创建空文件避免后续错误
+            echo "# 下载失败于 $(date '+%Y-%m-%d %H:%M:%S') UTC" > interface.txt
           fi
-        done
-        
-        # 获取北京时间
+        fi
+
+    - name: 5️⃣ 创建同步日志
+      run: |
+        # 北京时间
         BEIJING_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
-        BEIJING_DATE=$(TZ="Asia/Shanghai" date '+%Y年%m月%d日')
-        BEIJING_TIME_12H=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %p %I:%M:%S')
+        BEIJING_HOUR=$(TZ="Asia/Shanghai" date '+%H:%M')
         
-        # 创建强制提交信息文件（使用北京时间）
-        cat > sync-force.md << EOF
-        # 强制同步记录
+        # 下次同步时间
+        NEXT_SYNC=$(TZ="Asia/Shanghai" date -d '+30 minutes' '+%H:%M')
         
-        本次同步信息：
-        - 北京时间: $BEIJING_TIME
-        - 日期: $BEIJING_DATE
-        - 12小时制: $BEIJING_TIME_12H
-        - 运行ID: ${{ github.run_id }}
-        - 触发方式: ${{ github.event_name }}
-        - 源地址: https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt
-        - 同步频率: 每30分钟
-        
-        注意：此文件每次运行都会更新，无论源文件是否变化。
-        
-        ## 时区信息
-        - 当前时区: Asia/Shanghai (UTC+8)
-        - 下次同步: 北京时间 $(TZ="Asia/Shanghai" date -d '+30 minutes' '+%H:%M:%S')
-        
-        > 文件自动同步于 $BEIJING_TIME (北京时间)
+        # 创建详细的日志文件
+        cat > sync-log.md << EOF
+        # 📡 自动同步日志
+
+        ## 本次同步信息
+        - **同步时间**：$BEIJING_TIME (北京时间)
+        - **同步方式**：${{ github.event_name }}
+        ${{ github.event.inputs.force_note && format('**手动备注**：{0}', github.event.inputs.force_note) || '' }}
+        - **运行ID**：${{ github.run_id }}
+        - **运行序号**：${{ github.run_number }}
+        - **下次同步**：约 $NEXT_SYNC (北京时间)
+
+        ## 文件信息
+        - **源文件**：[interface.txt](https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt)
+        - **同步频率**：每30分钟
+        - **本地路径**：interface.txt
+        - **文件状态**：$(if [ -f "interface.txt" ]; then echo "✅ 已下载"; else echo "❌ 文件不存在"; fi)
+
+        ## 系统信息
+        - **运行系统**：${{ runner.os }}
+        - **触发事件**：${{ github.event_name }}
+        - **工作流**：${{ github.workflow }}
+        - **仓库**：${{ github.repository }}
+
+        > 最后更新：$BEIJING_TIME (北京时间)
+        > 
+        > 自动化同步 | 频率：每30分钟 | 时区：Asia/Shanghai (UTC+8)
         EOF
-        
-        # 添加文件并提交
+
+        # 也创建一个简单的状态文件
+        echo "last_sync: $BEIJING_TIME" > sync-status.txt
+        echo "next_sync: $NEXT_SYNC" >> sync-status.txt
+        echo "run_id: ${{ github.run_id }}" >> sync-status.txt
+
+    - name: 6️⃣ 检查文件变化
+      id: check-changes
+      run: |
+        echo "检查文件变化..."
         git add -A
-        
-        # 使用北京时间的提交信息
+        if git diff --cached --quiet; then
+          echo "没有检测到变化"
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+        else
+          echo "检测到文件变化"
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "变化的文件："
+          git diff --cached --name-only
+        fi
+
+    - name: 7️⃣ 提交并推送（如果有变化）
+      if: steps.check-changes.outputs.has_changes == 'true'
+      run: |
+        # 北京时间
         COMMIT_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
-        COMMIT_MSG="🔄 FORCE SYNC [$COMMIT_TIME 北京时间] #${{ github.run_number }}"
+        COMMIT_HOUR=$(TZ="Asia/Shanghai" date '+%H:%M')
+        
+        # 根据触发方式设置提交信息
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          COMMIT_MSG="🔄 手动同步 [$COMMIT_HOUR 北京时间]"
+          if [ -n "${{ github.event.inputs.force_note }}" ]; then
+            COMMIT_MSG="$COMMIT_MSG - ${{ github.event.inputs.force_note }}"
+          fi
+        else
+          COMMIT_MSG="⏰ 自动同步 [$COMMIT_HOUR 北京时间] #${{ github.run_number }}"
+        fi
+        
+        echo "提交信息：$COMMIT_MSG"
         
         git commit -m "$COMMIT_MSG"
+        git push origin HEAD:main
         
-        # 推送
-        git push origin main
-        
-        echo "✅ 同步完成于北京时间: $BEIJING_TIME"
+        echo "✅ 提交成功！"
 
-    - name: Show commit details
+    - name: 8️⃣ 无变化时的处理
+      if: steps.check-changes.outputs.has_changes == 'false'
       run: |
-        echo "=== 同步成功 ==="
-        echo "北京时间: $(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
-        echo "提交哈希: $(git log -1 --pretty=format:'%H')"
-        echo "提交时间(UTC): $(git log -1 --pretty=format:'%cd')"
-        echo "提交时间(北京时间): $(TZ="Asia/Shanghai" date -d "$(git log -1 --pretty=format:'%cd')" '+%Y-%m-%d %H:%M:%S')"
-        echo "提交信息: $(git log -1 --pretty=format:'%s')"
-        echo "文件状态:"
-        git status --short
+        echo "⚠️ 没有检测到文件变化，跳过提交"
+        BEIJING_TIME=$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')
+        echo "当前时间：$BEIJING_TIME (北京时间)"
+        echo "下次同步：$(TZ="Asia/Shanghai" date -d '+30 minutes' '+%H:%M')"
+
+    - name: 9️⃣ 最终状态报告
+      run: |
+        echo "========================================"
+        echo "           同步任务完成报告"
+        echo "========================================"
         echo ""
-        echo "当前时间对照:"
-        echo "UTC时间: $(date -u '+%Y-%m-%d %H:%M:%S')"
-        echo "北京时间: $(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
-        echo "下次同步: 北京时间 $(TZ="Asia/Shanghai" date -d '+30 minutes' '+%Y-%m-%d %H:%M:%S')"
+        echo "📅 时间信息："
+        echo "  UTC时间：$(date -u '+%Y-%m-%d %H:%M:%S')"
+        echo "  北京时间：$(TZ="Asia/Shanghai" date '+%Y-%m-%d %H:%M:%S')"
+        echo ""
+        echo "📊 同步状态："
+        if [ "${{ steps.check-changes.outputs.has_changes }}" == "true" ]; then
+          echo "  ✅ 检测到变化并已提交"
+          echo "  提交哈希：$(git log -1 --pretty=format:'%H')"
+          echo "  提交信息：$(git log -1 --pretty=format:'%s')"
+        else
+          echo "  ⏭️  无变化，跳过提交"
+        fi
+        echo ""
+        echo "🔮 下次同步："
+        echo "  北京时间：$(TZ="Asia/Shanghai" date -d '+30 minutes' '+%Y-%m-%d %H:%M:%S')"
+        echo "  （约30分钟后）"
+        echo ""
+        echo "📁 文件列表："
+        ls -la | grep -E "(interface|sync|log|status)"
+        echo "========================================"
