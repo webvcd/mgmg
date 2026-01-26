@@ -1,9 +1,8 @@
-name: 定时下载
+name: 定时下载migu
 on:
   schedule:
-    # 每小时整点触发，GitHub调度最稳定，替代30分钟（解决你的需求）
-    - cron: '0 * * * *'
-  workflow_dispatch: # 手动触发开关，测试用
+    - cron: '0 * * * *'  # 1小时整点触发
+  workflow_dispatch:     # 手动触发开关
 
 jobs:
   download-file:
@@ -12,13 +11,16 @@ jobs:
       - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: 下载interface.txt
+      - name: 强制下载并覆盖interface.txt
         run: |
-          curl -o interface.txt -L "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
-          ls -l interface.txt
+          # -f 强制覆盖已有文件 -s 静默下载（仅报错输出）-L 跟随重定向
+          curl -f -s -L -o interface.txt "https://raw.githubusercontent.com/develop202/migu_video/main/interface.txt"
+          ls -l interface.txt  # 验证文件存在
+          git add interface.txt # 强制加入暂存区（核心：无变更也标记）
 
-      - name: 提交并推送
+      - name: 强制提交并推送（无变更也提交）
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "定时更新：migu interface.txt [自动提交]"
+          commit_message: "定时强制更新：migu interface.txt [自动提交]"
           file_pattern: interface.txt
+          skip_dirty_check: true # 跳过文件变更检查（关键：强制提交）
